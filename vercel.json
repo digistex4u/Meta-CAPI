@@ -3,7 +3,8 @@
   "buildCommand": "",
   "outputDirectory": "public",
   "crons": [
-    { "path": "/api/meta-capi", "schedule": "*/15 * * * *" }
+    { "path": "/api/meta-capi", "schedule": "0 * * * *" },
+    { "path": "/api/prune", "schedule": "30 20 * * *" }
   ],
   "headers": [
     {

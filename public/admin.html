@@ -75,6 +75,7 @@ pre{background:#0f1117;color:#e6e8ec;border-radius:9px;padding:11px 13px;font-si
       <div><label>Shop domain (myshopify)</label><input id="f_shop" placeholder="acme-in.myshopify.com"></div>
       <div><label>Storefront domain</label><input id="f_store" placeholder="acme.com"><div class="hint">The public domain the pixel runs on</div></div>
       <div><label>Site URL</label><input id="f_site" placeholder="https://acme.com"></div>
+      <div><label>First-party pixel domain (optional)</label><input id="f_fp" placeholder="track.acme.com"><div class="hint">Serve the pixel from the brand's own subdomain (first-party). Add it in Vercel → Domains + a CNAME first. Blank = use the tool domain.</div></div>
       <div><label>Shopify API key</label><input id="f_key" placeholder="from the store's Custom App"></div>
       <div><label>Shopify API secret</label><input id="f_secret" type="password" placeholder="from the store's Custom App"></div>
       <div><label>Webhook secret (optional)</label><input id="f_whook" type="password" placeholder="defaults to API secret"></div>
@@ -99,7 +100,7 @@ var PW='', BASE=location.origin;
 function h(k){ return { 'Content-Type':'application/json', 'X-Admin-Key': PW }; }
 function login(){ PW=document.getElementById('pw').value||''; load(true); }
 function toggleForm(reset){ var f=document.getElementById('addForm'); if(reset){f.classList.add('hidden');clearForm();return;} f.classList.toggle('hidden'); }
-function clearForm(){ ['id','name','shop','store','site','key','secret','whook','pixel','mtoken'].forEach(function(x){var el=document.getElementById('f_'+x);if(el)el.value='';}); document.getElementById('f_cur').value='INR'; document.getElementById('f_country').value='India'; document.getElementById('formTitle').textContent='Add a store'; document.getElementById('formMsg').textContent=''; }
+function clearForm(){ ['id','name','shop','store','site','fp','key','secret','whook','pixel','mtoken'].forEach(function(x){var el=document.getElementById('f_'+x);if(el)el.value='';}); document.getElementById('f_cur').value='INR'; document.getElementById('f_country').value='India'; document.getElementById('formTitle').textContent='Add a store'; document.getElementById('formMsg').textContent=''; }
 function fmt(n){ return (n==null?0:n).toLocaleString('en-IN'); }
 function inr(n){ return '₹'+((n||0)).toLocaleString('en-IN'); }
 
@@ -123,7 +124,8 @@ async function load(first){
 function renderStores(list){
   if(!list.length){ document.getElementById('stores').innerHTML='<div class="card sub">No stores yet — click “+ Add store”.</div>'; return; }
   document.getElementById('stores').innerHTML=list.map(function(s){
-    var snip='&lt;script src="'+BASE+'/tracker.js?s='+s.key+'" async&gt;&lt;/script&gt;';
+    var pbase = s.first_party_domain ? ('https://'+s.first_party_domain) : BASE;
+    var snip='&lt;script src="'+pbase+'/tracker.js?s='+s.key+'" async&gt;&lt;/script&gt;';
     var hook=BASE+'/api/shopify-webhook';
     return '<div class="store">'+
       '<div class="row-top"><div><h3>'+esc(s.name||s.shop_domain)+'</h3><div class="dom">'+esc(s.shop_domain||'')+'</div></div></div>'+
@@ -131,6 +133,7 @@ function renderStores(list){
         badge(s.has_token,'Shopify token','No token')+
         badge(s.has_shopify,'API key set','No API key')+
         badge(s.has_meta,'Meta mapped','No Meta')+
+        (s.first_party_domain?'<span class="badge ok">First-party ✓</span>':'')+
         '<span class="badge mut">'+s.match_rate+'% CAPI match</span>'+
       '</div>'+
       '<div class="metrics"><span>Visitors <b>'+fmt(s.visitors)+'</b></span><span>Purchases <b>'+fmt(s.purchases)+'</b></span><span>FBCLID <b>'+fmt(s.with_fbclid)+'</b></span><span>Pushed <b>'+fmt(s.capi_pushed)+'</b></span><span>Value <b>'+inr(s.value)+'</b></span></div>'+
@@ -159,7 +162,8 @@ async function saveStore(){
   var body={ adminPassword:PW, action: id?'update':'create', id:id||undefined,
     name:v('f_name'), shop_domain:v('f_shop'), storefront:v('f_store'), site_url:v('f_site'),
     shopify_api_key:v('f_key'), shopify_api_secret:v('f_secret'), shopify_webhook_secret:v('f_whook'),
-    meta_pixel_id:v('f_pixel'), meta_capi_token:v('f_mtoken'), currency:v('f_cur'), country:v('f_country') };
+    meta_pixel_id:v('f_pixel'), meta_capi_token:v('f_mtoken'), currency:v('f_cur'), country:v('f_country'),
+    first_party_domain:v('f_fp') };
   var m=document.getElementById('formMsg'); m.textContent='Saving…'; m.className='msg';
   var r=await fetch('/api/stores',{method:'POST',headers:h(),body:JSON.stringify(body)});
   var j=await r.json();
@@ -171,6 +175,7 @@ function editStore(id){ var s=(window._stores||[]).find(function(x){return x.id=
   document.getElementById('f_id').value=s.id; document.getElementById('f_name').value=s.name||''; document.getElementById('f_shop').value=s.shop_domain||'';
   document.getElementById('f_store').value=s.storefront||''; document.getElementById('f_site').value=s.site_url||''; document.getElementById('f_pixel').value=s.meta_pixel_id||'';
   document.getElementById('f_cur').value=s.currency||'INR'; document.getElementById('f_country').value=s.country||'India';
+  document.getElementById('f_fp').value=s.first_party_domain||'';
   ['f_key','f_secret','f_whook','f_mtoken'].forEach(function(x){document.getElementById(x).value='';document.getElementById(x).placeholder='•••• (leave blank to keep)';});
   window.scrollTo(0,0);
 }

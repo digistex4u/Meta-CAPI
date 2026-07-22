@@ -1,0 +1,9 @@
+{
+  "name": "multi-capi",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-tenant Shopify → anonymous device id → click-ID retention → per-store Meta CAPI + Google offline conversions. Add many stores, map each to its own Meta account.",
+  "dependencies": {
+    "pg": "^8.22.0"
+  }
+}

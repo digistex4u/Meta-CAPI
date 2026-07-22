@@ -12,7 +12,7 @@ function publicStore(s) {
     shopify_api_key: mask(s.shopify_api_key), shopify_api_secret: mask(s.shopify_api_secret),
     shopify_webhook_secret: mask(s.shopify_webhook_secret),
     meta_pixel_id: s.meta_pixel_id || '', meta_capi_token: mask(s.meta_capi_token),
-    currency: s.currency, country: s.country, status: s.status,
+    currency: s.currency, country: s.country, status: s.status, first_party_domain: s.first_party_domain || '',
     has_token: !!s.shopify_token, token_age_h: s.shopify_token_at ? Math.round((Date.now() - new Date(s.shopify_token_at).getTime()) / 3600000) : null,
     created_at: s.created_at, updated_at: s.updated_at,
   };
@@ -37,11 +37,12 @@ export default async function handler(req, res) {
       const id = genId('st'), key = genId('sk');
       const shop = String(b.shop_domain).toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
       const store = String(b.storefront || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-      await d.query(`INSERT INTO stores (id,key,name,shop_domain,storefront,site_url,shopify_api_key,shopify_api_secret,shopify_webhook_secret,meta_pixel_id,meta_capi_token,currency,country)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      const fp = String(b.first_party_domain || '').toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      await d.query(`INSERT INTO stores (id,key,name,shop_domain,storefront,site_url,shopify_api_key,shopify_api_secret,shopify_webhook_secret,meta_pixel_id,meta_capi_token,currency,country,first_party_domain)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [id, key, b.name, shop, store, b.site_url || ('https://' + (store || shop)),
          b.shopify_api_key || '', b.shopify_api_secret || '', b.shopify_webhook_secret || '',
-         b.meta_pixel_id || '', b.meta_capi_token || '', b.currency || 'INR', b.country || 'India']);
+         b.meta_pixel_id || '', b.meta_capi_token || '', b.currency || 'INR', b.country || 'India', fp || null]);
       return res.status(200).json({ ok: true, id, key });
     }
 
@@ -49,12 +50,15 @@ export default async function handler(req, res) {
       if (!b.id) return res.status(400).json({ error: 'id required' });
       const fields = { name: b.name, shop_domain: b.shop_domain, storefront: b.storefront, site_url: b.site_url,
         shopify_api_key: b.shopify_api_key, shopify_api_secret: b.shopify_api_secret, shopify_webhook_secret: b.shopify_webhook_secret,
-        meta_pixel_id: b.meta_pixel_id, meta_capi_token: b.meta_capi_token, currency: b.currency, country: b.country, status: b.status };
+        meta_pixel_id: b.meta_pixel_id, meta_capi_token: b.meta_capi_token, currency: b.currency, country: b.country, status: b.status,
+        first_party_domain: b.first_party_domain };
       const sets = ['updated_at = now()']; const params = [b.id]; let n = 1;
       for (const [k, v] of Object.entries(fields)) {
-        if (v === undefined || v === '') continue;            // don't overwrite with blanks (keep existing secrets)
+        if (v === undefined) continue;                        // undefined = field not sent; keep existing
+        // first_party_domain can be blanked to clear it; other blanks are skipped (keep existing secrets)
+        if (v === '' && k !== 'first_party_domain') continue;
         let val = v;
-        if (k === 'shop_domain' || k === 'storefront') val = String(v).toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        if (k === 'shop_domain' || k === 'storefront' || k === 'first_party_domain') val = String(v).toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '') || null;
         params.push(val); n++; sets.push(`${k} = $${n}`);
         if (k === 'shopify_api_key' || k === 'shopify_api_secret') { sets.push('shopify_token = NULL', 'shopify_token_at = NULL'); } // creds changed → re-mint
       }

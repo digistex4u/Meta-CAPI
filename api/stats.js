@@ -23,6 +23,8 @@ export default async function handler(req, res) {
       ]);
       perStore.push({
         id: s.id, key: s.key, name: s.name, shop_domain: s.shop_domain, status: s.status,
+        storefront: s.storefront || '', site_url: s.site_url || '', meta_pixel_id: s.meta_pixel_id || '',
+        currency: s.currency || 'INR', country: s.country || 'India', first_party_domain: s.first_party_domain || '',
         has_shopify: !!(s.shopify_api_key && s.shopify_api_secret), has_token: !!s.shopify_token,
         has_meta: !!(s.meta_pixel_id && s.meta_capi_token),
         visitors: v.visitors || 0, customers: v.customers || 0,

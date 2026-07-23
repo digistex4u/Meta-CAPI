@@ -24,14 +24,20 @@ function seg(tier, priceInr) {
 }
 function userData(r) {
   const ud = {};
-  const extra = r.extra || {}, fs = r.first_source || {};
-  const email = (extra.email || (r.profile && r.profile.email) || '').toLowerCase() || null;
+  const extra = r.extra || {}, fs = r.first_source || {}, pf = r.profile || {};
+  const email = (extra.email || pf.email || '').toLowerCase() || null;
   const phone = extra.phone || r.contact_phone || null;
   const fbclid = r.fbclid || fs.fbclid || '';
   if (phone) ud.ph = [sha256(normalizePhoneDigits(phone))];
   if (email) ud.em = [sha256(email)];
-  if (r.profile && r.profile.city) ud.ct = [sha256(r.profile.city)];
-  if (fbclid) ud.fbc = 'fb.1.' + Date.now() + '.' + fbclid;
+  if (pf.city) ud.ct = [sha256(pf.city)];
+  // fbc: prefer the real _fbc cookie captured browser-side; else reconstruct from fbclid
+  if (pf.fbc) ud.fbc = pf.fbc;
+  else if (fbclid) ud.fbc = 'fb.1.' + Date.now() + '.' + fbclid;
+  if (pf.fbp) ud.fbp = pf.fbp;                              // Browser ID (_fbp) — big match lift
+  if (r.vid) ud.external_id = [sha256(String(r.vid))];      // stable hashed device id — free, big lift
+  if (pf.client_ip) ud.client_ip_address = pf.client_ip;   // raw, not hashed
+  if (pf.client_ua) ud.client_user_agent = pf.client_ua;   // raw, not hashed
   return { ud, hasId: !!(email || phone || fbclid) };
 }
 function deviceData(r, currency) {
@@ -48,7 +54,7 @@ async function pushStore(d, store, since, testCode) {
 
   // ── Purchases (standard event, deduped by order id) ──
   const purchases = await d.query(`
-    SELECT e.id, e.ts, e.cart_value, e.product_price, e.fbclid, e.extra,
+    SELECT e.id, e.vid, e.ts, e.cart_value, e.product_price, e.fbclid, e.extra,
            v.first_source, v.device_tier, v.device_price_inr, v.device_model, v.device_brand, v.profile, v.contact_phone
     FROM events e LEFT JOIN visitors v ON v.store_id=e.store_id AND v.vid=e.vid
     WHERE e.store_id=$1 AND e.event_type='purchase' AND e.capi_pushed_at IS NULL AND e.ts > now() - $2::interval
@@ -56,7 +62,7 @@ async function pushStore(d, store, since, testCode) {
 
   // ── Add-to-carts (custom event; only matchable ones) ──
   const carts = await d.query(`
-    SELECT e.id, e.ts, e.product_id, e.product_price, e.cart_value, e.fbclid, e.extra,
+    SELECT e.id, e.vid, e.ts, e.product_id, e.product_price, e.cart_value, e.fbclid, e.extra,
            v.first_source, v.device_tier, v.device_price_inr, v.device_model, v.device_brand, v.profile, v.contact_phone
     FROM events e LEFT JOIN visitors v ON v.store_id=e.store_id AND v.vid=e.vid
     WHERE e.store_id=$1 AND e.event_type='add_to_cart' AND e.capi_pushed_at IS NULL AND e.ts > now() - $2::interval

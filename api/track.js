@@ -88,6 +88,21 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Meta match-quality signals: _fbp / _fbc cookies + client IP + user agent (best-effort) ──
+    if (prof) {
+      const clientIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '';
+      const clientUa = req.headers['user-agent'] || '';
+      const sig = {};
+      if (prof.fbp) sig.fbp = prof.fbp;
+      if (prof.fbc) sig.fbc = prof.fbc;
+      if (clientIp) sig.client_ip = clientIp;
+      if (clientUa) sig.client_ua = clientUa;
+      if (Object.keys(sig).length) {
+        await d.query("UPDATE visitors SET profile = profile || $1::jsonb WHERE store_id=$2 AND vid=$3",
+          [JSON.stringify(sig), store_id, vid]).catch(() => {});
+      }
+    }
+
     // ── Product affinity ──
     const affinity = {};
     for (const e of events) if (e.event_type === 'product_view' && e.product_type) affinity[e.product_type] = (affinity[e.product_type] || 0) + 1;

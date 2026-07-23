@@ -432,7 +432,7 @@
         device: getDevice().device, device_model: DEVICE_MODEL.model, device_brand: DEVICE_MODEL.brand, device_tier: DEVICE_MODEL.tier, device_price_inr: DEVICE_PRICE.inr,
         city: _geoData ? _geoData.city : '', region: _geoData ? _geoData.region : '', country: _geoData ? _geoData.country : '',
         utm_source: getParams().stored.last_utm_source || '', gclid: getParams().stored.last_gclid || '', fbclid: getParams().stored.last_fbclid || '',
-        fbp: getCookie('_fbp') || '', fbc: getCookie('_fbc') || ''
+        fbp: getCookie('_fbp') || '', fbc: getCookie('_fbc') || '', client_ip: CLIENT_IP || ''
       }
     });
     fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function(){});
@@ -463,6 +463,17 @@
   // ═══ INIT ═══
   var VID = getVid();
   var SID = getSid();
+
+  // Capture the visitor's real public IP (IPv6 when they have it) so CAPI matches the
+  // pixel, which Meta receives over IPv6. Server-observed IP can be IPv4 even for IPv6
+  // users (if they reach our domain over v4), so we ask Cloudflare's trace which the
+  // browser hits over IPv6 when available. Non-blocking; falls back to server IP.
+  var CLIENT_IP = '';
+  try {
+    fetch('https://www.cloudflare.com/cdn-cgi/trace').then(function(r){ return r.text(); }).then(function(t){
+      var m = t.match(/ip=([^\n]+)/); if (m) CLIENT_IP = m[1].trim();
+    }).catch(function(){});
+  } catch (e) {}
 
   // Increment session count
   var profile = getProfile();

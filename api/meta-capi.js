@@ -106,7 +106,16 @@ async function pushStore(d, store, since, testCode) {
     for (const x of batch) { await d.query("INSERT INTO capi_log (store_id,event_id,event_name,value) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING", [store.id, x._id, x.ev.event_name, x.ev.custom_data.value || 0]).catch(() => {}); rowIds.push(x._row); pushed++; }
   }
   if (rowIds.length) await d.query("UPDATE events SET capi_pushed_at=now() WHERE store_id=$1 AND id = ANY($2::bigint[])", [store.id, rowIds]).catch(() => {});
-  return { store: store.key, purchases: purchases.length, carts: carts.length, pushed, skipped_no_id, skipped_no_value, skipped_dup, meta_response };
+  // ── Diagnostic: device-price segment distribution over the window (ALL events, not just newly pushed) ──
+  const segRows = await d.query(`
+    SELECT e.event_type, v.device_tier, v.device_price_inr
+    FROM events e LEFT JOIN visitors v ON v.store_id=e.store_id AND v.vid=e.vid
+    WHERE e.store_id=$1 AND e.event_type IN ('purchase','add_to_cart') AND e.ts > now() - $2::interval
+    LIMIT 5000`, [store.id, since]).then(x => x.rows).catch(() => []);
+  const segments = { purchase: { 'Higher DP': 0, 'Lower DP': 0, 'Unknown': 0 }, add_to_cart: { 'Higher DP': 0, 'Lower DP': 0, 'Unknown': 0 } };
+  for (const r of segRows) { const s = seg(r.device_tier, r.device_price_inr); if (segments[r.event_type]) segments[r.event_type][s]++; }
+
+  return { store: store.key, purchases: purchases.length, carts: carts.length, pushed, skipped_no_id, skipped_no_value, skipped_dup, segments, meta_response };
 }
 
 export default async function handler(req, res) {

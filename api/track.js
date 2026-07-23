@@ -90,7 +90,10 @@ export default async function handler(req, res) {
 
     // ── Meta match-quality signals: _fbp / _fbc cookies + client IP + user agent (best-effort) ──
     if (prof) {
-      const clientIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '';
+      const serverIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || (req.socket && req.socket.remoteAddress) || '';
+      const browserIp = String(prof.client_ip || '').trim();          // from Cloudflare trace — IPv6 when the user has it
+      // Prefer an IPv6 address (Meta receives IPv6 from the pixel); else fall back to whatever we have.
+      const clientIp = [browserIp, serverIp].find(ip => ip && ip.includes(':')) || browserIp || serverIp || '';
       const clientUa = req.headers['user-agent'] || '';
       const sig = {};
       if (prof.fbp) sig.fbp = prof.fbp;

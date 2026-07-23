@@ -431,7 +431,8 @@
         vid: VID, dfp: DEVICE_FP, sessions: profile.sessions || 1,
         device: getDevice().device, device_model: DEVICE_MODEL.model, device_brand: DEVICE_MODEL.brand, device_tier: DEVICE_MODEL.tier, device_price_inr: DEVICE_PRICE.inr,
         city: _geoData ? _geoData.city : '', region: _geoData ? _geoData.region : '', country: _geoData ? _geoData.country : '',
-        utm_source: getParams().stored.last_utm_source || '', gclid: getParams().stored.last_gclid || '', fbclid: getParams().stored.last_fbclid || ''
+        utm_source: getParams().stored.last_utm_source || '', gclid: getParams().stored.last_gclid || '', fbclid: getParams().stored.last_fbclid || '',
+        fbp: getCookie('_fbp') || '', fbc: getCookie('_fbc') || ''
       }
     });
     fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function(){});

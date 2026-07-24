@@ -6,6 +6,10 @@
     { "path": "/api/meta-capi", "schedule": "0 * * * *" },
     { "path": "/api/prune", "schedule": "30 20 * * *" }
   ],
+  "rewrites": [
+    { "source": "/crm/tracker.js", "destination": "https://mycrm-bice.vercel.app/tracker.js" },
+    { "source": "/crm/api/:path*",  "destination": "https://mycrm-bice.vercel.app/api/:path*" }
+  ],
   "headers": [
     {
       "source": "/device-prices.json",

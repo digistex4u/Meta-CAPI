@@ -141,18 +141,22 @@ export default async function handler(req, res) {
     // Heartbeat — proves the cron actually ran, even on a run with 0 new orders to push.
     // /api/health reads this timestamp to tell "cron alive" from "no orders".
     // Self-heal: create the table here too, so this works even if a stale lib/core.js
-    // didn't create it during ensureSchema.
-    await d.query(`CREATE TABLE IF NOT EXISTS system_health (k TEXT PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), info JSONB DEFAULT '{}'::jsonb)`).catch(() => {});
-    await d.query(
-      `INSERT INTO system_health (k, ts, info) VALUES ('meta_capi_last_run', now(), $1)
-       ON CONFLICT (k) DO UPDATE SET ts = now(), info = $1`,
-      [JSON.stringify({
-        stores: results.length,
-        total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0),
-        total_failed: results.reduce((a, r) => a + (r.failed || 0), 0),
-        errors: results.filter(r => r.error || r.meta_error).map(r => ({ store: r.store, error: r.error || r.meta_error })),
-      })]
-    ).catch(() => {});
-    return res.status(200).json({ ok: true, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
+    // didn't create it during ensureSchema. Errors are surfaced in the response ("heartbeat")
+    // instead of being swallowed, so a write failure is diagnosable.
+    let heartbeat = 'ok';
+    try {
+      await d.query(`CREATE TABLE IF NOT EXISTS system_health (k TEXT PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), info JSONB DEFAULT '{}'::jsonb)`);
+      await d.query(
+        `INSERT INTO system_health (k, ts, info) VALUES ('meta_capi_last_run', now(), $1::jsonb)
+         ON CONFLICT (k) DO UPDATE SET ts = now(), info = EXCLUDED.info`,
+        [JSON.stringify({
+          stores: results.length,
+          total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0),
+          total_failed: results.reduce((a, r) => a + (r.failed || 0), 0),
+          errors: results.filter(r => r.error || r.meta_error).map(r => ({ store: r.store, error: r.error || r.meta_error })),
+        })]
+      );
+    } catch (e) { heartbeat = 'error: ' + e.message; }
+    return res.status(200).json({ ok: true, heartbeat, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }

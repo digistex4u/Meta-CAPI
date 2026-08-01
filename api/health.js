@@ -22,7 +22,11 @@ function authOK(req) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'no-store');
+  // Aggressively disable caching — the plain Cache-Control was being ignored by the edge,
+  // which served a stale snapshot. These CDN-specific headers control Vercel's edge cache.
+  res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(200).end();
   const d = db(); await ensureSchema(d);
   if (!authOK(req)) return res.status(403).json({ error: 'unauthorized' });

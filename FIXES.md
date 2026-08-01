@@ -49,3 +49,19 @@ without hitting URLs manually.
   the schedule if pushes lag.
 - After deploy, click **Backfill** on each store (HOQ, Aenak, Heatronics) to
   recover the orders the old webhook dropped. Ratios should settle toward ~1.0×.
+
+## 7. Ratio now compared against ALL orders, not paid-only — `api/reconcile.js`
+COD/pending orders are recorded and pushed on creation, but the panel divided by
+PAID orders — making COD-heavy stores look like a 2x+ over-count when they're
+~1:1. Reconcile now bases the ratio on ALL Shopify orders and also reports the
+paid-only ratio for reference.
+
+## 8. Cron heartbeat + health endpoint (for the daily monitor) — `api/meta-capi.js`, `api/health.js`, `lib/core.js`
+- `meta-capi` writes a heartbeat row to a new `system_health` table every run —
+  so we can tell "cron alive" from "no orders", which a pushed-count can't.
+- New `GET /api/health?days=7` returns: cron last-run + alive flag, per-store
+  24h recorded/pushed, unpushed backlog, pushed-vs-all-orders and vs-paid ratios,
+  and a plain-English `flags` list of anything wrong. `healthy:true` when the
+  cron is fresh and no flags.
+- Auth: admin password, OR set a read-only `MONITOR_KEY` env var and use that in
+  the daily scheduled task (least privilege — can't touch stores).

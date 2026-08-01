@@ -61,6 +61,16 @@ export default async function handler(req, res) {
       const bl  = await q("SELECT count(*)::int n FROM events WHERE store_id=$1 AND event_type='purchase' AND capi_pushed_at IS NULL AND ts > now() - interval '7 days'", [s.id]);
       const p7  = await q("SELECT count(*)::int n FROM events WHERE store_id=$1 AND event_type='purchase' AND capi_pushed_at IS NOT NULL AND ts > now() - $2::interval", [s.id, iv]);
 
+      // Day-on-day purchases (bucketed by IST calendar day) for sanity-checking the data.
+      const daily = await d.query(
+        `SELECT to_char((ts AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD') AS date,
+                count(*)::int recorded,
+                count(*) FILTER (WHERE capi_pushed_at IS NOT NULL)::int pushed,
+                round(coalesce(sum(coalesce(cart_value,product_price,0)),0))::int value
+         FROM events
+         WHERE store_id=$1 AND event_type='purchase' AND ts > now() - interval '7 days'
+         GROUP BY date ORDER BY date DESC`, [s.id]).then(r => r.rows).catch(() => []);
+
       let anyOrders = null, paidOrders = null;
       if (s.shopify_api_key && s.shopify_api_secret && s.shop_domain) {
         const sinceIso = new Date(Date.now() - days * 86400000).toISOString();
@@ -81,8 +91,19 @@ export default async function handler(req, res) {
         recorded_24h: rec.n || 0, pushed_24h: psh.n || 0, backlog_unpushed: bl.n || 0,
         shopify_orders_7d: anyOrders, shopify_paid_7d: paidOrders, pushed_7d: pushed,
         ratio_vs_all: ratioAny, ratio_vs_paid: ratioPaid, ratio_status: ratioStatus,
+        daily,
       });
     }
+
+    // ── Day-on-day totals across ALL stores (IST days) ──
+    const dtMap = {};
+    for (const st of perStore) {
+      for (const row of (st.daily || [])) {
+        if (!dtMap[row.date]) dtMap[row.date] = { date: row.date, recorded: 0, pushed: 0, value: 0 };
+        dtMap[row.date].recorded += row.recorded; dtMap[row.date].pushed += row.pushed; dtMap[row.date].value += row.value;
+      }
+    }
+    const dailyTotals = Object.values(dtMap).sort((a, b) => b.date.localeCompare(a.date));
 
     // ── 3) Roll up into human-readable flags ──
     const flags = [];
@@ -101,6 +122,7 @@ export default async function handler(req, res) {
       generated_at: new Date().toISOString(),
       cron: { last_run: lastRun, minutes_since: minsSince, alive: cronAlive, last_info: hb ? hb.info : null, debug: hbDebug, db: hbDb },
       stores: perStore,
+      daily_totals: dailyTotals,
       healthy: cronAlive && flags.length === 0,
       flags,
     });

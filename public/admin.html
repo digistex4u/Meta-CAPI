@@ -142,6 +142,7 @@ function renderStores(list){
         '<button class="btn ghost sm" onclick="editStore(\''+s.id+'\')">Edit</button>'+
         '<button class="btn ghost sm" onclick="toggleSnip(\''+s.id+'\')">Install snippet</button>'+
         '<button class="btn ghost sm" onclick="reconcile(\''+s.key+'\',\''+s.id+'\',this)">Meta vs Shopify</button>'+
+        '<button class="btn ghost sm" onclick="backfill(\''+s.key+'\',\''+s.id+'\',this)">Backfill</button>'+
         '<button class="btn danger sm" onclick="delStore(\''+s.id+'\',\''+esc(s.name||'')+'\')">Delete</button>'+
         '<span class="msg" id="m_'+s.id+'"></span>'+
       '</div>'+
@@ -205,6 +206,30 @@ async function reconcile(key,id,btn){
         '<span class="dot2" style="background:'+col+'"></span>'+
       '</div>'+
       '<div class="sub" style="margin-top:4px">'+esc(j.note)+'</div>';
+  }catch(e){ btn.disabled=false; box.innerHTML='<span class="msg err">Error</span>'; }
+}
+
+async function backfill(key,id,btn){
+  var box=document.getElementById('rec_'+id); box.classList.remove('hidden');
+  box.innerHTML='<span class="sub">Pulling recent orders from Shopify (7d) & recording any the webhook missed…</span>'; btn.disabled=true;
+  try{
+    var r=await fetch('/api/backfill?store='+encodeURIComponent(key)+'&days=7',{headers:h()});
+    var j=await r.json();
+    if(!j.ok){ btn.disabled=false; box.innerHTML='<span class="msg err">'+(j.error||'Backfill error')+'</span>'; return; }
+    // Push the freshly-recorded purchases to Meta right away.
+    box.innerHTML='<span class="sub">Recorded '+fmt(j.inserted)+' order(s) (pulled '+fmt(j.pulled)+', '+fmt(j.skipped_existing)+' already had). Pushing to Meta…</span>';
+    var p=await fetch('/api/meta-capi?store='+encodeURIComponent(key)+'&since=7 days',{headers:h()});
+    var pj=await p.json().catch(function(){return{};});
+    btn.disabled=false;
+    var res=(pj.results&&pj.results[0])||{};
+    box.innerHTML=
+      '<div class="reconrow">'+
+        '<span>Pulled <b>'+fmt(j.pulled)+'</b></span>'+
+        '<span>Recorded <b>'+fmt(j.inserted)+'</b></span>'+
+        '<span>Pushed now <b>'+fmt(res.pushed||0)+'</b></span>'+
+        (res.failed?'<span style="color:#c0392b">Failed <b>'+fmt(res.failed)+'</b></span>':'')+
+      '</div>'+
+      '<div class="sub" style="margin-top:4px">'+esc(j.note||'')+(res.meta_error?(' · Meta error: '+esc(typeof res.meta_error==='string'?res.meta_error:JSON.stringify(res.meta_error))):'')+'</div>';
   }catch(e){ btn.disabled=false; box.innerHTML='<span class="msg err">Error</span>'; }
 }
 </script>

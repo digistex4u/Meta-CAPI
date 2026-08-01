@@ -26,6 +26,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   const d = db(); await ensureSchema(d);
   if (!authOK(req)) return res.status(403).json({ error: 'unauthorized' });
+  // Self-heal: ensure the heartbeat table exists even if a stale lib/core.js skipped it.
+  await d.query(`CREATE TABLE IF NOT EXISTS system_health (k TEXT PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), info JSONB DEFAULT '{}'::jsonb)`).catch(() => {});
 
   const days = Math.max(1, Math.min(30, parseInt((req.query && req.query.days) || '7', 10)));
   const iv = `${days} days`;

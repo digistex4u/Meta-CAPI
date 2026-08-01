@@ -140,6 +140,9 @@ export default async function handler(req, res) {
     for (const s of stores) { try { results.push(await pushStore(d, s, since, testCode)); } catch (e) { results.push({ store: s.key, error: e.message }); } }
     // Heartbeat — proves the cron actually ran, even on a run with 0 new orders to push.
     // /api/health reads this timestamp to tell "cron alive" from "no orders".
+    // Self-heal: create the table here too, so this works even if a stale lib/core.js
+    // didn't create it during ensureSchema.
+    await d.query(`CREATE TABLE IF NOT EXISTS system_health (k TEXT PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), info JSONB DEFAULT '{}'::jsonb)`).catch(() => {});
     await d.query(
       `INSERT INTO system_health (k, ts, info) VALUES ('meta_capi_last_run', now(), $1)
        ON CONFLICT (k) DO UPDATE SET ts = now(), info = $1`,

@@ -138,6 +138,18 @@ export default async function handler(req, res) {
     else stores = (await listStores(d)).filter(s => s.status === 'active');
     const results = [];
     for (const s of stores) { try { results.push(await pushStore(d, s, since, testCode)); } catch (e) { results.push({ store: s.key, error: e.message }); } }
+    // Heartbeat — proves the cron actually ran, even on a run with 0 new orders to push.
+    // /api/health reads this timestamp to tell "cron alive" from "no orders".
+    await d.query(
+      `INSERT INTO system_health (k, ts, info) VALUES ('meta_capi_last_run', now(), $1)
+       ON CONFLICT (k) DO UPDATE SET ts = now(), info = $1`,
+      [JSON.stringify({
+        stores: results.length,
+        total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0),
+        total_failed: results.reduce((a, r) => a + (r.failed || 0), 0),
+        errors: results.filter(r => r.error || r.meta_error).map(r => ({ store: r.store, error: r.error || r.meta_error })),
+      })]
+    ).catch(() => {});
     return res.status(200).json({ ok: true, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }

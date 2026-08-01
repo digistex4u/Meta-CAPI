@@ -41,8 +41,12 @@ export default async function handler(req, res) {
       "SELECT count(*)::int n FROM events WHERE store_id=$1 AND event_type='purchase' AND capi_pushed_at IS NOT NULL AND ts > now() - $2::interval",
       [store.id, iv]).then(r => r.rows[0].n).catch(() => 0);
 
-    const base = shopifyPaid != null ? shopifyPaid : shopifyOrders;
+    // We record & push EVERY order (incl. COD / pending), so the health ratio must compare against
+    // ALL Shopify orders — not paid-only. Comparing against paid made COD-heavy stores look like a
+    // 2x+ over-count when they're actually ~1:1. We still surface the paid ratio for reference.
+    const base = shopifyOrders != null ? shopifyOrders : shopifyPaid;
     const ratio = base ? +(pushed / base).toFixed(2) : null;
+    const ratio_paid = shopifyPaid ? +(pushed / shopifyPaid).toFixed(2) : null;
     let status = 'unknown';
     if (base != null && ratio != null) {
       if (ratio >= 0.85 && ratio <= 1.15) status = 'good';        // ~1:1 — healthy
@@ -54,9 +58,9 @@ export default async function handler(req, res) {
       ok: true, store: store.key, days,
       shopify_orders: shopifyOrders, shopify_paid: shopifyPaid,
       recorded: recorded.n, recorded_value: Number(recorded.v || 0),
-      pushed_to_meta: pushed, ratio, status,
-      note: status === 'good' ? 'Healthy ~1:1 — one CAPI Purchase per real order.'
-        : status === 'over' ? 'We are pushing more Purchases than Shopify orders — check for duplicate order ids or a re-run.'
+      pushed_to_meta: pushed, ratio, ratio_paid, status,
+      note: status === 'good' ? `Healthy ~1:1 vs all orders (${pushed}/${base}). Paid-only ratio ${ratio_paid != null ? ratio_paid + '×' : '—'} — the gap is COD/pending orders we push on creation.`
+        : status === 'over' ? 'We are pushing more Purchases than ALL Shopify orders (not just paid) — check for duplicate order ids or a re-run.'
         : status === 'under' ? 'Fewer pushed than orders — recent orders may still be queued, or the webhook missed some (run backfill).'
         : status === 'no_shopify' ? 'Add Shopify credentials to compare against real orders.'
         : 'No orders in this window.',

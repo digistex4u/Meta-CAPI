@@ -22,11 +22,9 @@ function authOK(req) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  // Aggressively disable caching — the plain Cache-Control was being ignored by the edge,
-  // which served a stale snapshot. These CDN-specific headers control Vercel's edge cache.
-  res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
-  res.setHeader('CDN-Cache-Control', 'no-store');
-  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+  // NOTE: deliberately do NOT set any Cache-Control header. On this project, setting one
+  // (even no-store) caused Vercel's edge to cache the response and serve a frozen snapshot;
+  // endpoints with no Cache-Control (meta-capi, reconcile) stay dynamic/fresh. Leave it unset.
   if (req.method === 'OPTIONS') return res.status(200).end();
   const d = db(); await ensureSchema(d);
   if (!authOK(req)) return res.status(403).json({ error: 'unauthorized' });

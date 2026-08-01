@@ -9,7 +9,8 @@
 //    collides with the browser's standard AddToCart → your AddToCart metric is untouched.
 //  • Every event also carries content_category = device price segment, so you can build
 //    "… — Higher DP / Lower DP" custom conversions in Meta's rule builder.
-import { db, ensureSchema, listStores, getStoreByKey, sha256, normalizePhoneDigits } from '../lib/core.js';
+import { db, ensureSchema, listStores, getStoreByKey, sha256, normalizePhoneDigits, adminAuth } from '../lib/core.js';
+import { buildReport } from '../lib/report.js';
 export const maxDuration = 60;
 
 const API_VERSION = process.env.META_API_VERSION || 'v18.0';
@@ -161,6 +162,17 @@ export default async function handler(req, res) {
       const who = await d.query("SELECT current_database() db, inet_server_addr() host").then(r => r.rows[0]).catch(() => null);
       heartbeat_db = who ? (who.db + '@' + who.host) : null;
     } catch (e) { heartbeat = 'error: ' + e.message; }
-    return res.status(200).json({ ok: true, heartbeat, heartbeat_readback, heartbeat_db, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
+
+    // Optional full health/sanity report (day-on-day purchases, ratios, cron status).
+    // Served here because this endpoint is never edge-cached (unlike /api/status|monitor|health).
+    // Requires the admin password or MONITOR_KEY: /api/meta-capi?report=1&key=...&days=7
+    let report = null;
+    if (req.query && (req.query.report === '1' || req.query.report === 'true')) {
+      const mk = process.env.MONITOR_KEY;
+      const okAuth = adminAuth(req) || (mk && req.query.key === mk);
+      if (!okAuth) report = { error: 'unauthorized' };
+      else { try { report = await buildReport(d, req.query.days || 7); } catch (e) { report = { error: e.message }; } }
+    }
+    return res.status(200).json({ ok: true, heartbeat, heartbeat_readback, heartbeat_db, report, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }

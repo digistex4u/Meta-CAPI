@@ -57,7 +57,7 @@ async function pushStore(d, store, since, testCode) {
     SELECT e.id, e.vid, e.ts, e.cart_value, e.product_price, e.fbclid, e.extra,
            v.first_source, v.device_tier, v.device_price_inr, v.device_model, v.device_brand, v.profile, v.contact_phone
     FROM events e LEFT JOIN visitors v ON v.store_id=e.store_id AND v.vid=e.vid
-    WHERE e.store_id=$1 AND e.event_type='purchase' AND e.capi_pushed_at IS NULL AND e.ts > now() - $2::interval
+    WHERE e.store_id=$1 AND e.event_type='purchase' AND e.capi_pushed_at IS NULL AND e.ts > now() - LEAST($2::interval, interval '7 days')
     ORDER BY e.ts DESC LIMIT 300`, [store.id, since]).then(x => x.rows).catch(() => []);
 
   // ── Add-to-carts (custom event; only matchable ones) ──
@@ -65,7 +65,7 @@ async function pushStore(d, store, since, testCode) {
     SELECT e.id, e.vid, e.ts, e.product_id, e.product_price, e.cart_value, e.fbclid, e.extra,
            v.first_source, v.device_tier, v.device_price_inr, v.device_model, v.device_brand, v.profile, v.contact_phone
     FROM events e LEFT JOIN visitors v ON v.store_id=e.store_id AND v.vid=e.vid
-    WHERE e.store_id=$1 AND e.event_type='add_to_cart' AND e.capi_pushed_at IS NULL AND e.ts > now() - $2::interval
+    WHERE e.store_id=$1 AND e.event_type='add_to_cart' AND e.capi_pushed_at IS NULL AND e.ts > now() - LEAST($2::interval, interval '7 days')
       AND (coalesce(e.fbclid,'')<>'' OR coalesce(v.first_source->>'fbclid','')<>'' OR coalesce(v.profile->>'email','')<>'' OR coalesce(v.contact_phone,'')<>'')
     ORDER BY e.ts DESC LIMIT 300`, [store.id, since]).then(x => x.rows).catch(() => []);
 
@@ -96,13 +96,21 @@ async function pushStore(d, store, since, testCode) {
     await add(r, ATC_EVENT, 'atc_' + r.id, value, r.product_id ? [String(r.product_id)] : null);
   }
 
-  let pushed = 0, meta_response = null;
+  let pushed = 0, failed = 0, meta_response = null, meta_error = null;
   for (let i = 0; i < built.length; i += 50) {
     const batch = built.slice(i, i + 50);
     const payload = { data: batch.map(x => x.ev), access_token: store.meta_capi_token };
     if (testCode) payload.test_event_code = testCode;
     const resp = await fetch(`https://graph.facebook.com/${API_VERSION}/${store.meta_pixel_id}/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     meta_response = await resp.json().catch(() => ({}));
+    const ok = resp.ok && !(meta_response && meta_response.error);
+    if (!ok) {
+      // Meta rejected this batch (bad token/pixel, expired events, etc.). Do NOT mark these rows
+      // pushed and do NOT log them — leave them so the next cron run retries them.
+      failed += batch.length;
+      meta_error = (meta_response && meta_response.error) || ('HTTP ' + resp.status);
+      continue;
+    }
     for (const x of batch) { await d.query("INSERT INTO capi_log (store_id,event_id,event_name,value) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING", [store.id, x._id, x.ev.event_name, x.ev.custom_data.value || 0]).catch(() => {}); rowIds.push(x._row); pushed++; }
   }
   if (rowIds.length) await d.query("UPDATE events SET capi_pushed_at=now() WHERE store_id=$1 AND id = ANY($2::bigint[])", [store.id, rowIds]).catch(() => {});
@@ -115,7 +123,7 @@ async function pushStore(d, store, since, testCode) {
   const segments = { purchase: { 'Higher DP': 0, 'Lower DP': 0, 'Unknown': 0 }, add_to_cart: { 'Higher DP': 0, 'Lower DP': 0, 'Unknown': 0 } };
   for (const r of segRows) { const s = seg(r.device_tier, r.device_price_inr); if (segments[r.event_type]) segments[r.event_type][s]++; }
 
-  return { store: store.key, purchases: purchases.length, carts: carts.length, pushed, skipped_no_id, skipped_no_value, skipped_dup, segments, meta_response };
+  return { store: store.key, purchases: purchases.length, carts: carts.length, pushed, failed, meta_error, skipped_no_id, skipped_no_value, skipped_dup, segments, meta_response };
 }
 
 export default async function handler(req, res) {

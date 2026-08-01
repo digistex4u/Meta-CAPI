@@ -34,9 +34,11 @@ export default async function handler(req, res) {
     const recorded = await d.query(
       "SELECT count(*)::int n, coalesce(sum(coalesce(cart_value,product_price,0)),0)::numeric v FROM events WHERE store_id=$1 AND event_type='purchase' AND ts > now() - $2::interval",
       [store.id, iv]).then(r => r.rows[0]).catch(() => ({ n: 0, v: 0 }));
-    // Distinct Purchase events actually sent to Meta (capi_log is the source of truth for pushes)
+    // Purchases we've pushed to Meta, aligned to ORDER DATE (event ts) — not push time.
+    // (Counting by capi_log.pushed_at made a one-off backfill of a 30-day backlog look like a
+    //  3x+ over-count, because all those pushes land in the recent window regardless of order date.)
     const pushed = await d.query(
-      "SELECT count(*)::int n FROM capi_log WHERE store_id=$1 AND event_name='Purchase' AND pushed_at > now() - $2::interval",
+      "SELECT count(*)::int n FROM events WHERE store_id=$1 AND event_type='purchase' AND capi_pushed_at IS NOT NULL AND ts > now() - $2::interval",
       [store.id, iv]).then(r => r.rows[0].n).catch(() => 0);
 
     const base = shopifyPaid != null ? shopifyPaid : shopifyOrders;

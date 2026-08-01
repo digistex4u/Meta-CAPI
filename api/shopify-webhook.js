@@ -76,11 +76,23 @@ export default async function handler(req, res) {
       }
     } catch (e) {}
 
+    // Dedup by Shopify order id (guards against Shopify webhook retries + overlap with backfill).
+    const oid = String(order.id);
+    const already = await d.query("SELECT 1 FROM events WHERE store_id=$1 AND event_type='purchase' AND extra->>'order_id'=$2 LIMIT 1", [store_id, oid]).then(r => r.rows).catch(() => []);
+    if (already.length) {
+      return res.status(200).json({ ok: true, store: store.key, order: orderName, duplicate: true, matched: !!vid, method });
+    }
+
+    // ALWAYS record the purchase — even when no visitor matched. Unmatched orders still
+    // push to Meta on hashed email/phone; dropping them (the old behaviour) silently lost sales.
+    const useVid = vid || ('ord_' + oid);
+    await d.query(`INSERT INTO events (store_id, vid, event_type, page_url, product_name, product_price, cart_value, gclid, fbclid, utm_source, extra)
+      VALUES ($1,$2,'purchase','/checkout/thank-you',$3,$4,$5,$6,$7,$8,$9)`,
+      [store_id, useVid, 'Order ' + orderName, totalPrice, totalPrice, finalGclid, finalFbclid, utmSource || null,
+       JSON.stringify({ order_id: oid, order_name: orderName, items, currency, email, phone, customer_ltv: ltv, orders_count: ordersCount })]);
+
+    // Visitor promotion/enrichment only applies when we actually matched a real visitor.
     if (vid) {
-      await d.query(`INSERT INTO events (store_id, vid, event_type, page_url, product_name, product_price, cart_value, gclid, fbclid, utm_source, extra)
-        VALUES ($1,$2,'purchase','/checkout/thank-you',$3,$4,$5,$6,$7,$8,$9)`,
-        [store_id, vid, 'Order ' + orderName, totalPrice, totalPrice, finalGclid, finalFbclid, utmSource || null,
-         JSON.stringify({ order_id: String(order.id), order_name: orderName, items, currency, email, phone, customer_ltv: ltv, orders_count: ordersCount })]);
       const upd = ["lifecycle = CASE WHEN lifecycle IN ('anonymous','identified') THEN 'customer' ELSE lifecycle END", "updated_at=now()", "total_events=total_events+1"];
       const params = [store_id, vid];
       if (phone) { params.push(phone); upd.push(`contact_phone = COALESCE(NULLIF(contact_phone,''), $${params.length})`); }

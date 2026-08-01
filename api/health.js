@@ -35,8 +35,14 @@ export default async function handler(req, res) {
 
   try {
     // ── 1) Cron heartbeat ──
-    const hb = await d.query("SELECT ts, info FROM system_health WHERE k='meta_capi_last_run'")
-      .then(r => r.rows[0] || null).catch(() => null);
+    let hb = null, hbDebug = 'ok';
+    try {
+      const rows = await d.query("SELECT k, ts, info FROM system_health").then(r => r.rows);
+      hbDebug = 'rows=' + rows.length + ' keys=[' + rows.map(r => r.k).join(',') + ']';
+      hb = rows.find(r => r.k === 'meta_capi_last_run') || null;
+    } catch (e) { hbDebug = 'read_error: ' + e.message; }
+    const who = await d.query("SELECT current_database() db, inet_server_addr() host").then(r => r.rows[0]).catch(() => null);
+    const hbDb = who ? (who.db + '@' + who.host) : null;
     const lastRun = hb ? hb.ts : null;
     const minsSince = lastRun ? Math.round((Date.now() - new Date(lastRun).getTime()) / 60000) : null;
     const cronAlive = minsSince != null && minsSince <= CRON_MAX_MIN;
@@ -89,7 +95,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       generated_at: new Date().toISOString(),
-      cron: { last_run: lastRun, minutes_since: minsSince, alive: cronAlive, last_info: hb ? hb.info : null },
+      cron: { last_run: lastRun, minutes_since: minsSince, alive: cronAlive, last_info: hb ? hb.info : null, debug: hbDebug, db: hbDb },
       stores: perStore,
       healthy: cronAlive && flags.length === 0,
       flags,

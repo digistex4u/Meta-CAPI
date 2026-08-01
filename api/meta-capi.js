@@ -143,7 +143,7 @@ export default async function handler(req, res) {
     // Self-heal: create the table here too, so this works even if a stale lib/core.js
     // didn't create it during ensureSchema. Errors are surfaced in the response ("heartbeat")
     // instead of being swallowed, so a write failure is diagnosable.
-    let heartbeat = 'ok';
+    let heartbeat = 'ok', heartbeat_readback = null, heartbeat_db = null;
     try {
       await d.query(`CREATE TABLE IF NOT EXISTS system_health (k TEXT PRIMARY KEY, ts TIMESTAMPTZ DEFAULT now(), info JSONB DEFAULT '{}'::jsonb)`);
       await d.query(
@@ -156,7 +156,11 @@ export default async function handler(req, res) {
           errors: results.filter(r => r.error || r.meta_error).map(r => ({ store: r.store, error: r.error || r.meta_error })),
         })]
       );
+      const rb = await d.query("SELECT ts FROM system_health WHERE k='meta_capi_last_run'").then(r => r.rows[0]).catch(() => null);
+      heartbeat_readback = rb ? rb.ts : 'ROW_MISSING_AFTER_WRITE';
+      const who = await d.query("SELECT current_database() db, inet_server_addr() host").then(r => r.rows[0]).catch(() => null);
+      heartbeat_db = who ? (who.db + '@' + who.host) : null;
     } catch (e) { heartbeat = 'error: ' + e.message; }
-    return res.status(200).json({ ok: true, heartbeat, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
+    return res.status(200).json({ ok: true, heartbeat, heartbeat_readback, heartbeat_db, stores: results.length, total_pushed: results.reduce((a, r) => a + (r.pushed || 0), 0), atc_event: ATC_EVENT, results });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }

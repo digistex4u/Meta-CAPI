@@ -95,6 +95,16 @@ export default async function handler(req, res) {
       }
     }
 
+    if (action === 'pause_meta') {
+      // Pause/resume Meta CAPI pushing for a store. Recording (webhook, backfill, device data)
+      // continues; only the push to Meta stops. Use when Meta is already fed by another source
+      // (e.g. Shopify's native Facebook & Instagram channel) to avoid double-counting.
+      if (!b.id) return res.status(400).json({ error: 'id required' });
+      const paused = (b.paused === true || b.paused === 'true' || b.paused === 1);
+      await d.query("UPDATE stores SET meta_push_paused=$2, updated_at=now() WHERE id=$1", [b.id, paused]);
+      return res.status(200).json({ ok: true, meta_push_paused: paused });
+    }
+
     return res.status(400).json({ error: 'Invalid action' });
   } catch (e) { return res.status(500).json({ error: e.message }); }
 }

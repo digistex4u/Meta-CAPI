@@ -220,6 +220,7 @@ function renderStores(list){
         badge(s.has_meta,'Meta mapped','No Meta')+
         (s.first_party_domain?'<span class="badge ok">First-party ✓</span>':'')+
         '<span class="badge mut">'+s.match_rate+'% CAPI match</span>'+
+        (s.meta_push_paused?'<span class="badge no">⏸ Meta push paused</span>':'')+
       '</div>'+
       '<div class="metrics"><span>Visitors <b>'+fmt(s.visitors)+'</b></span><span>Purchases <b>'+fmt(s.purchases)+'</b></span><span>FBCLID <b>'+fmt(s.with_fbclid)+'</b></span><span>Pushed <b>'+fmt(s.capi_pushed)+'</b></span><span>Value <b>'+inr(s.value)+'</b></span></div>'+
       '<div class="acts">'+
@@ -228,6 +229,7 @@ function renderStores(list){
         '<button class="btn ghost sm" onclick="toggleSnip(\''+s.id+'\')">Install snippet</button>'+
         '<button class="btn ghost sm" onclick="reconcile(\''+s.key+'\',\''+s.id+'\',this)">Meta vs Shopify</button>'+
         '<button class="btn ghost sm" onclick="backfill(\''+s.key+'\',\''+s.id+'\',this)">Backfill</button>'+
+        '<button class="btn ghost sm" onclick="pauseMeta(\''+s.id+'\','+(s.meta_push_paused?'false':'true')+',this)">'+(s.meta_push_paused?'▶ Resume Meta':'⏸ Pause Meta')+'</button>'+
         '<button class="btn danger sm" onclick="delStore(\''+s.id+'\',\''+esc(s.name||'')+'\')">Delete</button>'+
         '<span class="msg" id="m_'+s.id+'"></span>'+
       '</div>'+
@@ -272,6 +274,12 @@ async function testStore(id,btn){ var m=document.getElementById('m_'+id); m.text
 }
 async function delStore(id,name){ if(!confirm('Delete store '+name+'? Tracking stops; data is kept.'))return;
   await fetch('/api/stores',{method:'POST',headers:h(),body:JSON.stringify({adminPassword:PW,action:'delete',id:id})}); load(); }
+async function pauseMeta(id,paused,btn){
+  if(paused && !confirm('Pause Meta push for this store? Orders keep being recorded, but nothing is sent to Meta (use when Meta is already fed by Shopify’s native Facebook channel to avoid double-counting). You can resume anytime.'))return;
+  btn.disabled=true; btn.textContent=paused?'Pausing…':'Resuming…';
+  try{ await fetch('/api/stores',{method:'POST',headers:h(),body:JSON.stringify({adminPassword:PW,action:'pause_meta',id:id,paused:paused})}); load(); }
+  catch(e){ btn.disabled=false; }
+}
 
 async function reconcile(key,id,btn){
   var box=document.getElementById('rec_'+id); box.classList.remove('hidden');

@@ -49,6 +49,7 @@ function deviceData(r, currency) {
 }
 
 async function pushStore(d, store, since, testCode) {
+  if (store.meta_push_paused) return { store: store.key, skipped: 'meta_paused' };   // pause switch: keep recording, don't push to Meta
   if (!store.meta_pixel_id || !store.meta_capi_token) return { store: store.key, skipped: 'no_meta_creds' };
   const currency = store.currency || 'INR';
   const src = store.site_url || ('https://' + store.storefront);

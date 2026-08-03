@@ -27,6 +27,7 @@ export default async function handler(req, res) {
         currency: s.currency || 'INR', country: s.country || 'India', first_party_domain: s.first_party_domain || '',
         has_shopify: !!(s.shopify_api_key && s.shopify_api_secret), has_token: !!s.shopify_token,
         has_meta: !!(s.meta_pixel_id && s.meta_capi_token),
+        meta_push_paused: !!s.meta_push_paused,
         visitors: v.visitors || 0, customers: v.customers || 0,
         purchases: p.purchases || 0, with_fbclid: p.with_fbclid || 0, with_gclid: p.with_gclid || 0,
         capi_pushed: p.capi_pushed || 0, value: Number(p.value || 0),
